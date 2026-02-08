@@ -6,12 +6,14 @@ import shlex
 import tempfile
 import subprocess
 from pathlib import Path
+from shutil import disk_usage
+
 
 # =========================
 # USER VARIABLES (edit these)
 # =========================
-SOURCE_PATH = "/path/to/source.mp4"  # <-- set your source video file path
-TARGET_HOURS = 10                    # <-- e.g., 10, 5, etc.
+SOURCE_PATH = "/media/arun/EFFF-548F/YouTube/Master_Videos/04/Nested Sequence 01.mp4"  # <-- set your source video file path
+TARGET_HOURS = 6                  # <-- e.g., 10, 5, etc.
 
 # =========================
 # Helpers
@@ -47,6 +49,22 @@ def hms(seconds: float) -> str:
     s = seconds % 60
     # show seconds with 2 decimals to feel responsive
     return f"{h:02d}:{m:02d}:{s:05.2f}"
+
+
+def estimate_output_size_bytes(src: str, src_seconds: float, target_seconds: float) -> int:
+    src_size = os.path.getsize(src)  # bytes
+    return int(src_size * (target_seconds / src_seconds))
+
+def check_space_or_exit(output_dir: str, required_bytes: int, margin_pct: int = 10) -> None:
+    free_bytes = disk_usage(output_dir).free
+    needed = int(required_bytes * (1 + margin_pct / 100))
+
+    print(f"Estimated output size: {required_bytes/1024/1024/1024:.2f} GB")
+    print(f"Free space available: {free_bytes/1024/1024/1024:.2f} GB")
+    print(f"Required (with {margin_pct}% margin): {needed/1024/1024/1024:.2f} GB")
+
+    if free_bytes < needed:
+        raise SystemExit("Not enough disk space. Free space or change output folder.")
 
 def build_concat_list_file(src: str, repeats: int, list_path: str) -> None:
     """
@@ -134,6 +152,9 @@ def main():
     print(f"Repeats needed: {repeats}")
     print(f"Output: {out_path}")
     print("Mode: stream copy (no re-encode) -> same quality/resolution/codec")
+
+    required = estimate_output_size_bytes(src, src_seconds, target_seconds)
+    check_space_or_exit(out_dir, required, margin_pct=10)
 
     # Create temporary concat list
     with tempfile.TemporaryDirectory() as td:
