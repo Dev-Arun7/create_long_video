@@ -12,8 +12,9 @@ from shutil import disk_usage
 # =========================
 # USER VARIABLES (edit these)
 # =========================
-SOURCE_PATH = "/media/arun/EFFF-548F/YouTube/Master_Videos/04/Nested Sequence 01.mp4"  # <-- set your source video file path
-TARGET_HOURS = 6                  # <-- e.g., 10, 5, etc.
+SOURCE_PATH = "/media/arun/EFFF-548F1/YouTube/Premier_out/01_flamigoes.mp4"  # <-- set your source video file path
+TARGET_HOURS = 3                  # <-- e.g., 10, 5, etc.
+TARGET_PATH = "/media/arun/EFFF-548F1/YouTube/Ready To Upload"
 
 # =========================
 # Helpers
@@ -138,13 +139,25 @@ def main():
 
     target_seconds = float(TARGET_HOURS) * 3600.0
     src_seconds = ffprobe_duration_seconds(src)
+
     if src_seconds <= 0:
         print("ERROR: Source duration seems invalid (<=0).", file=sys.stderr)
         sys.exit(1)
 
     repeats = int(math.ceil(target_seconds / src_seconds))
-    out_dir = str(Path(src).resolve().parent)
-    out_path = os.path.join(out_dir, f"final_video_{TARGET_HOURS}_hours.mp4")
+
+    # -----------------------------
+    # create output folder if needed
+    # -----------------------------
+    os.makedirs(TARGET_PATH, exist_ok=True)  # <-- ADDED
+
+    # -----------------------------
+    # output file path
+    # -----------------------------
+    out_path = os.path.join(
+        TARGET_PATH,
+        f"final_video_{TARGET_HOURS}_hours.mp4"
+    )  # <-- CHANGED to TARGET_PATH
 
     print(f"Source: {src}")
     print(f"Source duration: {hms(src_seconds)}")
@@ -154,16 +167,17 @@ def main():
     print("Mode: stream copy (no re-encode) -> same quality/resolution/codec")
 
     required = estimate_output_size_bytes(src, src_seconds, target_seconds)
-    check_space_or_exit(out_dir, required, margin_pct=10)
+
+    # -----------------------------
+    # check disk space in TARGET_PATH
+    # -----------------------------
+    check_space_or_exit(TARGET_PATH, required, margin_pct=10)  # <-- CHANGED
 
     # Create temporary concat list
     with tempfile.TemporaryDirectory() as td:
         list_file = os.path.join(td, "concat_list.txt")
         build_concat_list_file(src, repeats, list_file)
 
-        # ffmpeg concat demuxer + stream copy + trim to target duration
-        # -progress pipe:1 gives machine-readable progress
-        # -nostats keeps it cleaner
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -174,15 +188,16 @@ def main():
             "-t", str(target_seconds),
             "-c", "copy",
             "-movflags", "+faststart",
-            "-y",  # overwrite output if exists
+            "-y",
             "-progress", "pipe:1",
             out_path
         ]
 
         rc = run_ffmpeg_with_progress(cmd, target_seconds)
+
         if rc != 0:
-            print("ERROR: ffmpeg failed. This can happen if the input MP4 has timestamp issues.")
-            print("Try re-muxing the source once, then rerun:")
+            print("ERROR: ffmpeg failed.")
+            print("Try remuxing once:")
             print(f"  ffmpeg -i {shlex.quote(src)} -c copy -movflags +faststart remuxed.mp4")
             sys.exit(rc)
 
