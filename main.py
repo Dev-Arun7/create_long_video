@@ -12,9 +12,10 @@ from shutil import disk_usage
 # =========================
 # USER VARIABLES (edit these)
 # =========================
-SOURCE_PATH = "/media/arun/EFFF-548F1/YouTube/Premier_out/01_flamigoes.mp4"  # <-- set your source video file path
-TARGET_HOURS = 3                  # <-- e.g., 10, 5, etc.
-TARGET_PATH = "/media/arun/EFFF-548F1/YouTube/Ready To Upload"
+SOURCE_PATH = "/home/arun/Downloads/temp/215368.mp4"  # <-- set your source video file path
+TARGET_HOURS = 2                # <-- e.g., 10, 5, etc.
+TARGET_PATH = "/home/arun/Downloads/temp"
+FASTSTART = False  # True = better for web streaming, adds rewrite time at end
 
 # =========================
 # Helpers
@@ -51,7 +52,6 @@ def hms(seconds: float) -> str:
     # show seconds with 2 decimals to feel responsive
     return f"{h:02d}:{m:02d}:{s:05.2f}"
 
-
 def estimate_output_size_bytes(src: str, src_seconds: float, target_seconds: float) -> int:
     src_size = os.path.getsize(src)  # bytes
     return int(src_size * (target_seconds / src_seconds))
@@ -76,17 +76,16 @@ def build_concat_list_file(src: str, repeats: int, list_path: str) -> None:
     with open(list_path, "w", encoding="utf-8") as f:
         for _ in range(repeats):
             # ffmpeg concat demuxer format
-            f.write(f"file '{src_abs}'\n")
+            f.write("file '{}'\n".format(src_abs.replace("'", "'\\''")))
 
 def run_ffmpeg_with_progress(cmd, target_seconds: float) -> int:
-    """
-    Run ffmpeg and print progress percentage based on out_time_ms from -progress.
-    """
-    # line-buffered text reading
+    import time
+    start_time = time.time()
+
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
         universal_newlines=True
@@ -96,26 +95,28 @@ def run_ffmpeg_with_progress(cmd, target_seconds: float) -> int:
     try:
         for line in proc.stdout:
             line = line.strip()
-            # ffmpeg -progress outputs key=value lines like out_time_ms=12345678
             if line.startswith("out_time_ms="):
                 try:
-                    out_ms = int(line.split("=", 1)[1])
-                    out_sec = out_ms / 1_000_000.0
+                    out_us = int(line.split("=", 1)[1])
+                    out_sec = out_us / 1_000_000.0
                     pct = min(100.0, (out_sec / target_seconds) * 100.0) if target_seconds > 0 else 100.0
-
-                    # Print only when it changes enough to avoid spamming
                     if pct - last_pct >= 0.5 or pct >= 100.0:
                         last_pct = pct
-                        print(f"\rWorking... {pct:6.2f}%  ({hms(out_sec)} / {hms(target_seconds)})", end="", flush=True)
+                        elapsed = time.time() - start_time
+                        if pct > 0:
+                            eta = (elapsed / pct) * (100.0 - pct)
+                            eta_str = hms(eta)
+                        else:
+                            eta_str = "calculating..."
+                        print(f"\rWorking... {pct:6.2f}%  ({hms(out_sec)} / {hms(target_seconds)})  |  Elapsed: {hms(elapsed)}  |  ETA: {eta_str}", end="", flush=True)
                 except Exception:
                     pass
 
-            # If you want to see ffmpeg logs, uncomment:
-            # else:
-            #     print("\n" + line)
-
         rc = proc.wait()
-        print()  # newline after the \r progress line
+        elapsed = time.time() - start_time
+        print(f"\nTotal time taken: {hms(elapsed)}")
+        if rc != 0:
+            print(proc.stderr.read())
         return rc
     finally:
         if proc.stdout:
@@ -124,6 +125,7 @@ def run_ffmpeg_with_progress(cmd, target_seconds: float) -> int:
 # =========================
 # Main
 # =========================
+
 def main():
     require_cmd("ffmpeg")
     require_cmd("ffprobe")
@@ -187,7 +189,7 @@ def main():
             "-i", list_file,
             "-t", str(target_seconds),
             "-c", "copy",
-            "-movflags", "+faststart",
+            *(["-movflags", "+faststart"] if FASTSTART else []),
             "-y",
             "-progress", "pipe:1",
             out_path
@@ -208,6 +210,6 @@ if __name__ == "__main__":
 
 
 # ---------------------------
-#        10-02-2026
+#        08-03-2026
 #    Arun Balakrishnan
 # ---------------------------
